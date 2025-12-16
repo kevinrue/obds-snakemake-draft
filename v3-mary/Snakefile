@@ -54,7 +54,7 @@ rule hisat2:
         bam="results/hisat2/{sample}.sorted.bam",
     threads: 8
     resources:
-        mem_mb=8000,
+        mem_mb=16000,
         runtime=60,
         slurm_partition="short",
     shell:
@@ -63,7 +63,6 @@ rule hisat2:
         hisat2 -x /project/shared/linux/5_rnaseq/hisat2_index/grcm39 \
             -1 {input.read1} -2 {input.read2} -p {threads} \
             | samtools sort -@ {threads} -o {output.bam}
-        samtools index {output.bam}
         """
 
 rule samtools_index:
