@@ -1,0 +1,33 @@
+###############
+# User inputs #
+###############
+
+SAMPLES = [
+    "cd4_rep1",
+    "cd8_rep1"
+]
+
+############
+# Workflow #
+############
+
+# Rules
+
+rule all:
+    input:
+        expand("results/fastqc/{sample}_{read}_fastqc.html", sample=SAMPLES, read=["read1", "read2"]),
+
+rule fastqc:
+    input:
+        fastq="data/{sample}_{read}.fastq.gz"
+    output:
+        html="results/fastqc/{sample}_{read}_fastqc.html"
+    threads: 2
+    resources:
+        mem_mb=2000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        fastqc --outdir results/fastqc -t {threads} {input.fastq}
+        """

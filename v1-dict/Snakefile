@@ -1,0 +1,183 @@
+###############
+# User inputs #
+###############
+
+samples = {
+    "cd4_rep1": {
+        "fastq1": "data/cd4_rep1_read1.fastq.gz",
+        "fastq2": "data/cd4_rep1_read2.fastq.gz"
+    }
+}
+
+############
+# Workflow #
+############
+
+# Dependencies
+
+import os
+import re
+
+# Flatten FASTQ files into a single mapping
+# to process each FASTQ file individually with FastQC
+
+fastqs = {}
+for sample, reads in samples.items():
+    for read, path in reads.items():
+        fastq_key = re.sub(r"\.fastq.gz$", "", os.path.basename(path))
+        fastqs[fastq_key] = path
+
+# Rules
+
+rule all:
+    input:
+        "results/multiqc/fastqc_report.html",
+        "results/multiqc/hisat2_report.html",
+        "results/multiqc/featurecounts_report.html",
+
+rule fastqc:
+    input:
+        fastq=lambda wc: fastqs[wc.id]
+    output:
+        html="results/fastqc/{id}_fastqc.html"
+    threads: 2
+    resources:
+        mem_mb=2000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        fastqc --outdir results/fastqc -t {threads} {input.fastq}
+        """
+
+rule multiqc_fastqc:
+    input:
+        expand("results/fastqc/{id}_fastqc.html", id=fastqs.keys())
+    output:
+        html="results/multiqc/fastqc_report.html"
+    threads: 1
+    resources:
+        mem_mb=2000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        multiqc results/fastqc --outdir results/multiqc --filename fastqc_report.html
+        """
+
+rule hisat2:
+    input:
+        read1=lambda wc: samples[wc.sample]["fastq1"],
+        read2=lambda wc: samples[wc.sample]["fastq2"]
+    output:
+        bam="results/hisat2/{sample}.sorted.bam",
+        bai="results/hisat2/{sample}.sorted.bam.bai"
+    threads: 8
+    resources:
+        mem_mb=8000,
+        runtime=60,
+        slurm_partition="short",
+    shell:
+        """
+        mkdir -p results/hisat2
+        hisat2 -x /project/shared/linux/5_rnaseq/hisat2_index/grcm39 \
+            -1 {input.read1} -2 {input.read2} -p {threads} \
+            | samtools sort -@ {threads} -o {output.bam}
+        samtools index {output.bam}
+        """
+
+rule samtools_flagstat:
+    input:
+        bam="results/hisat2/{sample}.sorted.bam"
+    output:
+        txt="results/hisat2/{sample}.flagstat.txt"
+    threads: 1
+    resources:
+        mem_mb=2000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        samtools flagstat {input.bam} > {output.txt}
+        """
+
+rule samtools_idxstats:
+    input:
+        bam="results/hisat2/{sample}.sorted.bam",
+        bai="results/hisat2/{sample}.sorted.bam.bai"
+    output:
+        txt="results/hisat2/{sample}.idxstats.txt"
+    threads: 1
+    resources:
+        mem_mb=2000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        samtools idxstats {input.bam} > {output.txt}
+        """
+
+rule multiqc_hisat2:
+    input:
+        expand(
+            "results/hisat2/{sample}.{suffix}",
+            sample=samples.keys(),
+            suffix=[
+                "sorted.bam",
+                "sorted.bam.bai",
+                "flagstat.txt",
+                "idxstats.txt",
+            ],
+        )
+    output:
+        html="results/multiqc/hisat2_report.html"
+    threads: 1
+    resources:
+        mem_mb=2000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        multiqc results/hisat2 --outdir results/multiqc --filename hisat2_report.html
+        """
+
+rule featurecounts:
+    input:
+        bam="results/hisat2/{sample}.sorted.bam"
+    output:
+        txt="results/featurecounts/{sample}.counts.txt"
+    threads: 8
+    resources:
+        mem_mb=8000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        mkdir -p results/featurecounts
+        featureCounts \
+            -T {threads} \
+            -p \
+            -a /project/shared/linux/5_rnaseq/genomes/gtf/Mus_musculus.GRCm39.113.gtf.gz \
+            -o {output.txt} \
+            {input.bam}
+        """
+
+rule multiqc_featurecounts:
+    input:
+        expand(
+            "results/featurecounts/{sample}.counts.txt",
+            sample=samples.keys(),
+        )
+    output:
+        html="results/multiqc/featurecounts_report.html"
+    threads: 1
+    resources:
+        mem_mb=2000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        multiqc results/featurecounts \
+            --outdir results/multiqc \
+            --filename featurecounts_report.html
+        """

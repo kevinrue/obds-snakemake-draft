@@ -1,0 +1,168 @@
+############
+# Workflow #
+############
+
+rule all:
+    input:
+        "results/multiqc/fastqc_report.html",
+        "results/multiqc/hisat2_report.html",
+        "results/multiqc/featurecounts_report.html"
+
+rule fastqc:
+    input:
+        fastqs=[
+            "data/cd4_rep1_read1.fastq.gz",
+            "data/cd4_rep1_read2.fastq.gz"
+        ],
+    output:
+        dir=directory("results/fastqc/"),
+    threads: 2
+    resources:
+        mem_mb=2000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        mkdir -p results/fastqc/
+        fastqc --outdir {output.dir} -t {threads} {input.fastqs}
+        """
+
+rule multiqc_fastqc:
+    input:
+        dir="results/fastqc/",
+    output:
+        html="results/multiqc/fastqc_report.html"
+    threads: 1
+    resources:
+        mem_mb=2000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        multiqc {input.dir} --outdir results/multiqc --filename fastqc_report.html
+        """
+
+rule hisat2:
+    input:
+        read1="data/cd4_rep1_read1.fastq.gz",
+        read2="data/cd4_rep1_read2.fastq.gz",
+    output:
+        bam="results/hisat2/cd4_rep1.sorted.bam",
+    threads: 8
+    resources:
+        mem_mb=8000,
+        runtime=60,
+        slurm_partition="short",
+    shell:
+        """
+        mkdir -p results/hisat2
+        hisat2 -x /project/shared/linux/5_rnaseq/hisat2_index/grcm39 \
+            -1 {input.read1} -2 {input.read2} -p {threads} \
+            | samtools sort -@ {threads} -o {output.bam}
+        """
+
+rule samtools_index:
+    input:
+        bam="results/hisat2/cd4_rep1.sorted.bam",
+    output:
+        bai="results/hisat2/cd4_rep1.sorted.bam.bai",
+    threads: 8
+    resources:
+        mem_mb=8000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        samtools index {input.bam}
+        """
+
+rule samtools_flagstat:
+    input:
+        bam="results/hisat2/cd4_rep1.sorted.bam",
+    output:
+        txt="results/hisat2/cd4_rep1.flagstat.txt"
+    threads: 1
+    resources:
+        mem_mb=2000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        samtools flagstat {input.bam} > {output.txt}
+        """
+
+rule samtools_idxstats:
+    input:
+        bam="results/hisat2/cd4_rep1.sorted.bam",
+        bai="results/hisat2/cd4_rep1.sorted.bam.bai"
+    output:
+        txt="results/hisat2/cd4_rep1.idxstats.txt"
+    threads: 1
+    resources:
+        mem_mb=2000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        samtools idxstats {input.bam} > {output.txt}
+        """
+
+rule multiqc_hisat2:
+    input:
+        [
+            "results/hisat2/cd4_rep1.sorted.bam",
+            "results/hisat2/cd4_rep1.sorted.bam.bai",
+            "results/hisat2/cd4_rep1.flagstat.txt",
+            "results/hisat2/cd4_rep1.idxstats.txt"
+        ]
+    output:
+        html="results/multiqc/hisat2_report.html"
+    threads: 1
+    resources:
+        mem_mb=2000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        multiqc results/hisat2 --outdir results/multiqc --filename hisat2_report.html
+        """
+
+rule featurecounts:
+    input:
+        bam="results/hisat2/cd4_rep1.sorted.bam"
+    output:
+        txt="results/featurecounts/cd4_rep1.counts.txt"
+    threads: 8
+    resources:
+        mem_mb=8000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        mkdir -p results/featurecounts
+        featureCounts \
+            -T {threads} \
+            -p \
+            -a /project/shared/linux/5_rnaseq/genomes/gtf/Mus_musculus.GRCm39.113.gtf.gz \
+            -o {output.txt} \
+            {input.bam}
+        """
+
+rule multiqc_featurecounts:
+    input:
+        [
+            "results/featurecounts/cd4_rep1.counts.txt"
+        ]
+    output:
+        html="results/multiqc/featurecounts_report.html"
+    threads: 1
+    resources:
+        mem_mb=2000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        multiqc results/featurecounts \
+            --outdir results/multiqc \
+            --filename featurecounts_report.html
+        """
