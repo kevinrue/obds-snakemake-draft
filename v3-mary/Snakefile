@@ -11,11 +11,9 @@ SAMPLES = [
 # Workflow #
 ############
 
-# Rules
-
 rule all:
     input:
-        expand("results/fastqc/{sample}_{read}_fastqc.html", sample=SAMPLES, read=["read1", "read2"]),
+        "results/multiqc/fastqc_report.html",
 
 rule fastqc:
     input:
@@ -30,4 +28,19 @@ rule fastqc:
     shell:
         """
         fastqc --outdir results/fastqc -t {threads} {input.fastq}
+        """
+
+rule multiqc_fastqc:
+    input:
+        expand("results/fastqc/{sample}_{read}_fastqc.html", sample=SAMPLES, read=["read1", "read2"]),
+    output:
+        html="results/multiqc/fastqc_report.html",
+    threads: 1
+    resources:
+        mem_mb=2000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        multiqc results/fastqc --outdir results/multiqc --filename fastqc_report.html
         """
