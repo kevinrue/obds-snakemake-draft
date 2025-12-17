@@ -1,0 +1,4 @@
+samplesheet: "config/samples.tsv"
+
+featurecounts:
+    gtf: /project/shared/linux/5_rnaseq/genomes/gtf/Mus_musculus.GRCm39.113.gtf.gz

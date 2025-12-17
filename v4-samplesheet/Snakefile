@@ -1,0 +1,66 @@
+import pandas as pd
+
+###############
+# User inputs #
+###############
+
+configfile: "config/config.yaml"
+
+# read sample sheet
+samples = (
+    pd.read_csv(config["samplesheet"], sep="\t", dtype={"sample": str})
+    .set_index("sample", drop=False)
+    .sort_index()
+)
+
+# helper to build lists of fastqc outputs (one per existent read file)
+fastqc_outputs = [
+    re.sub(r'\.fastq\.gz$', '_fastqc.html', f)
+    for f in list(samples["read1"]) + list(samples["read2"])
+]
+
+############
+# Workflow #
+############
+
+rule all:
+    input:
+        "results/multiqc/fastqc_report.html",
+        # "results/multiqc/hisat2_report.html",
+        # "results/multiqc/featurecounts_report.html",
+
+rule fastqc:
+    input:
+        fastq=lookup(query="sample == '{sample}'", within=samples, cols="{read}")
+    output:
+        html="results/fastqc/{sample}_{read}_fastqc.html",
+        zip="results/fastqc/{sample}_{read}_fastqc.zip",
+    threads: 2
+    resources:
+        mem_mb=2000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        fastqc --outdir results/fastqc -t {threads} {input.fastq}
+        """
+
+rule multiqc_fastqc:
+    input:
+        expand(
+            "results/fastqc/{sample}_{read}_fastqc.{ext}",
+            sample=samples.index,
+            read=["read1", "read2"],
+            ext=["html", "zip"],
+        ),
+    output:
+        html="results/multiqc/fastqc_report.html",
+    threads: 1
+    resources:
+        mem_mb=2000,
+        runtime=10,
+        slurm_partition="short",
+    shell:
+        """
+        multiqc results/fastqc --outdir results/multiqc --filename fastqc_report.html
+        """
